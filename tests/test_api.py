@@ -565,7 +565,7 @@ class VersionTests(unittest.TestCase):
     def test_version_is_exported(self):
         package = importlib.import_module("httpx2_negotiate_sspi")
 
-    self.assertEqual(package.__version__, version_module.__version__)
+        self.assertEqual(package.__version__, version_module.__version__)
 
 
 class HttpNegotiateAuthAsyncTests(unittest.IsolatedAsyncioTestCase):
