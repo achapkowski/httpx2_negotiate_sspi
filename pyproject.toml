@@ -38,7 +38,8 @@ dev = [
 doc = ["sphinx", "sphinx-rtd-theme"]
 
 [project.urls]
-Homepage = "https://github.com/achapkowski/httpx2-negotiate-sspi"
+Homepage = "https://github.com/achapkowski/httpx2_negotiate_sspi"
+Documentation = "https://achapkowski.github.io/httpx2_negotiate_sspi"
 
 [tool.setuptools.dynamic]
 version = { attr = "httpx2_negotiate_sspi.__version__.__version__" }
