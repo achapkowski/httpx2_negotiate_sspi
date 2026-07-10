@@ -1,0 +1,72 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-wheels:
+    name: Build Windows wheel for Python ${{ matrix.python-version }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install build tools
+        run: python -m pip install build wheel
+
+      - name: Build wheel
+        run: python -m build --wheel --outdir dist
+
+      - name: Tag wheel as Windows-only for this Python version
+        shell: pwsh
+        run: |
+          $pythonTag = "py$($env:PYTHON_VERSION.Replace('.', ''))"
+          $wheel = Get-ChildItem dist\*.whl | Select-Object -First 1
+          python -m wheel tags --remove --python-tag $pythonTag --abi-tag none --platform-tag win_amd64 $wheel.FullName
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.python-version }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  publish:
+    name: Publish distributions
+    runs-on: ubuntu-latest
+    needs: build-wheels
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List distributions
+        run: ls -la dist
+
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
