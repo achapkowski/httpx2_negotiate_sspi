@@ -24,7 +24,15 @@ jobs:
           cache: pip
 
       - name: Install build tools
-        run: python -m pip install build
+        run: python -m pip install build wheel
 
       - name: Build distribution
         run: python -m build
+
+      - name: Tag wheel as Windows-only
+        shell: pwsh
+        run: |
+          $pythonTag = python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')"
+          $wheel = Get-ChildItem dist\*-py3-none-any.whl | Select-Object -First 1
+          if ($null -eq $wheel) { throw "No pure wheel found in dist" }
+          python -m wheel tags --remove --python-tag $pythonTag --abi-tag $pythonTag --platform-tag win_amd64 $wheel.FullName

@@ -33,7 +33,7 @@ class HttpNegotiateAuth(httpx2.Auth):
     requires_response_body = True
 
     _auth_info: tuple[str, str, str] | None = None
-    _service: str = 'HTTP'
+    _service: str = "HTTP"
     _host: str | None = None
     _delegate: bool = False
 
@@ -60,10 +60,10 @@ class HttpNegotiateAuth(httpx2.Auth):
         with a domain account.
         """
         if domain is None:
-            domain = '.'
+            domain = "."
 
         self._auth_info = None
-        self._service = 'HTTP'
+        self._service = "HTTP"
         self._host = host
         self._delegate = delegate
 
@@ -74,11 +74,11 @@ class HttpNegotiateAuth(httpx2.Auth):
             self._service = service
 
     def _get_peer_cert(self, response: httpx2.Response) -> bytes | None:
-        network_stream = response.extensions.get('network_stream')
+        network_stream = response.extensions.get("network_stream")
         if network_stream is None:
             return None
 
-        ssl_object = network_stream.get_extra_info('ssl_object')
+        ssl_object = network_stream.get_extra_info("ssl_object")
         if ssl_object is None:
             return None
 
@@ -86,8 +86,8 @@ class HttpNegotiateAuth(httpx2.Auth):
 
     def _www_authenticate_values(self, response: httpx2.Response) -> list[str]:
         values: list[str] = []
-        for value in response.headers.get_list('WWW-Authenticate'):
-            values.extend(part.strip() for part in value.split(','))
+        for value in response.headers.get_list("WWW-Authenticate"):
+            values.extend(part.strip() for part in value.split(","))
         return values
 
     def _set_auth_header(
@@ -100,15 +100,21 @@ class HttpNegotiateAuth(httpx2.Auth):
         message: str,
     ) -> None:
         error, auth = clientauth.authorize(sec_buffer)
-        request.headers['Authorization'] = '{} {}'.format(scheme, base64.b64encode(auth[0].Buffer).decode('ASCII'))
+        request.headers["Authorization"] = "{} {}".format(
+            scheme, base64.b64encode(auth[0].Buffer).decode("ASCII")
+        )
         if response.cookies:
             httpx2.Cookies(response.cookies).set_cookie_header(request=request)
-        _logger.debug('%s - error=%s authenticated=%s', message, error, clientauth.authenticated)
+        _logger.debug(
+            "%s - error=%s authenticated=%s", message, error, clientauth.authenticated
+        )
 
-    def _append_token_buffer(self, sec_buffer: Any, max_token: int, token: str | bytes) -> None:
+    def _append_token_buffer(
+        self, sec_buffer: Any, max_token: int, token: str | bytes
+    ) -> None:
         tokenbuf = win32security.PySecBufferType(max_token, sspicon.SECBUFFER_TOKEN)
         if isinstance(token, str):
-            token = token.encode('ASCII')
+            token = token.encode("ASCII")
         tokenbuf.Buffer = base64.b64decode(token)
         sec_buffer.append(tokenbuf)
 
@@ -119,18 +125,22 @@ class HttpNegotiateAuth(httpx2.Auth):
     ) -> Generator[httpx2.Request, httpx2.Response, None]:
         request = response.request
 
-        if 'Authorization' in request.headers:
+        if "Authorization" in request.headers:
             return None
 
         host = self._host
         if host is None:
             host = request.url.host
             try:
-                host = socket.getaddrinfo(host, None, 0, 0, 0, socket.AI_CANONNAME)[0][3]
+                host = socket.getaddrinfo(host, None, 0, 0, 0, socket.AI_CANONNAME)[0][
+                    3
+                ]
             except socket.gaierror as e:
-                _logger.info('Skipping canonicalization of name %s due to error: %s', host, e)
+                _logger.info(
+                    "Skipping canonicalization of name %s due to error: %s", host, e
+                )
 
-        targetspn = '{}/{}'.format(self._service, host)
+        targetspn = "{}/{}".format(self._service, host)
 
         # We request mutual auth by default
         scflags = sspicon.ISC_REQ_MUTUAL_AUTH
@@ -140,8 +150,13 @@ class HttpNegotiateAuth(httpx2.Auth):
 
         # Set up SSPI connection structure
         pkg_info = win32security.QuerySecurityPackageInfo(scheme)
-        clientauth = sspi.ClientAuth(scheme, targetspn=targetspn, auth_info=self._auth_info,
-                                     scflags=scflags, datarep=sspicon.SECURITY_NETWORK_DREP)
+        clientauth = sspi.ClientAuth(
+            scheme,
+            targetspn=targetspn,
+            auth_info=self._auth_info,
+            scflags=scflags,
+            datarep=sspicon.SECURITY_NETWORK_DREP,
+        )
         sec_buffer = win32security.PySecBufferDescType()
 
         # Channel Binding Hash (aka Extended Protection for Authentication)
@@ -152,16 +167,36 @@ class HttpNegotiateAuth(httpx2.Auth):
         if peercert is not None:
             md = hashlib.sha256()
             md.update(peercert)
-            appdata = 'tls-server-end-point:'.encode('ASCII')+md.digest()
-            cbtbuf = win32security.PySecBufferType(pkg_info['MaxToken'], sspicon.SECBUFFER_CHANNEL_BINDINGS)
-            cbtbuf.Buffer = struct.pack('LLLLLLLL{}s'.format(len(appdata)), 0, 0, 0, 0, 0, 0, len(appdata), 32, appdata)
+            appdata = "tls-server-end-point:".encode("ASCII") + md.digest()
+            cbtbuf = win32security.PySecBufferType(
+                pkg_info["MaxToken"], sspicon.SECBUFFER_CHANNEL_BINDINGS
+            )
+            cbtbuf.Buffer = struct.pack(
+                "LLLLLLLL{}s".format(len(appdata)),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                len(appdata),
+                32,
+                appdata,
+            )
             sec_buffer.append(cbtbuf)
 
         # Send initial challenge auth header
         try:
-            self._set_auth_header(request, response, scheme, clientauth, sec_buffer, 'Sending Initial Context Token')
+            self._set_auth_header(
+                request,
+                response,
+                scheme,
+                clientauth,
+                sec_buffer,
+                "Sending Initial Context Token",
+            )
         except pywintypes.error as e:
-            _logger.debug('Error calling {}: {}'.format(e[1], e[2]), exc_info=e)
+            _logger.debug("Error calling {}: {}".format(e[1], e[2]), exc_info=e)
             return None
 
         response2 = yield request
@@ -169,15 +204,19 @@ class HttpNegotiateAuth(httpx2.Auth):
         # Should get another 401 if we are doing challenge-response (NTLM)
         if response2.status_code != 401:
             # Kerberos may have succeeded; if so, finalize our auth context
-            final = response2.headers.get('WWW-Authenticate')
+            final = response2.headers.get("WWW-Authenticate")
             if final is not None:
                 try:
                     # Sometimes Windows seems to forget to prepend 'Negotiate' to the success response,
                     # and we get just a bare chunk of base64 token. Not sure why.
-                    final = final.replace(scheme, '', 1).lstrip()
-                    self._append_token_buffer(sec_buffer, pkg_info['MaxToken'], final)
+                    final = final.replace(scheme, "", 1).lstrip()
+                    self._append_token_buffer(sec_buffer, pkg_info["MaxToken"], final)
                     error, auth = clientauth.authorize(sec_buffer)
-                    _logger.debug('Kerberos Authentication succeeded - error={} authenticated={}'.format(error, clientauth.authenticated))
+                    _logger.debug(
+                        "Kerberos Authentication succeeded - error={} authenticated={}".format(
+                            error, clientauth.authenticated
+                        )
+                    )
                 except TypeError:
                     pass
 
@@ -186,24 +225,34 @@ class HttpNegotiateAuth(httpx2.Auth):
             return
 
         # Extract challenge message from server
-        challenge = [val[len(scheme)+1:] for val in self._www_authenticate_values(response2) if val.lower().startswith(scheme.lower() + ' ')]
+        challenge = [
+            val[len(scheme) + 1 :]
+            for val in self._www_authenticate_values(response2)
+            if val.lower().startswith(scheme.lower() + " ")
+        ]
         if len(challenge) != 1:
-            raise httpx2.HTTPError('Did not get exactly one {} challenge from server.'.format(scheme))
+            raise httpx2.HTTPError(
+                "Did not get exactly one {} challenge from server.".format(scheme)
+            )
 
         # Add challenge to security buffer
-        self._append_token_buffer(sec_buffer, pkg_info['MaxToken'], challenge[0])
-        _logger.debug('Got Challenge Token (NTLM)')
+        self._append_token_buffer(sec_buffer, pkg_info["MaxToken"], challenge[0])
+        _logger.debug("Got Challenge Token (NTLM)")
 
         # Perform next authorization step
         try:
-            self._set_auth_header(request, response2, scheme, clientauth, sec_buffer, 'Sending Response')
+            self._set_auth_header(
+                request, response2, scheme, clientauth, sec_buffer, "Sending Response"
+            )
         except pywintypes.error as e:
-            _logger.debug('Error calling {}: {}'.format(e[1], e[2]), exc_info=e)
+            _logger.debug("Error calling {}: {}".format(e[1], e[2]), exc_info=e)
             return
 
         yield request
 
-    def auth_flow(self, request: httpx2.Request) -> Generator[httpx2.Request, httpx2.Response, None]:
+    def auth_flow(
+        self, request: httpx2.Request
+    ) -> Generator[httpx2.Request, httpx2.Response, None]:
         """Run the shared Negotiate/NTLM authentication state machine.
 
         ``httpx2`` drives this generator by sending each yielded request and
@@ -211,19 +260,24 @@ class HttpNegotiateAuth(httpx2.Auth):
         ``async_auth_flow`` through ``httpx2.Client`` or ``httpx2.AsyncClient``;
         this method exists as the shared implementation for both client modes.
         """
-        request.headers['Connection'] = 'Keep-Alive'
+        request.headers["Connection"] = "Keep-Alive"
 
         response = yield request
 
         if response.status_code != 401:
             return
 
-        for scheme in ('Negotiate', 'NTLM'):
-            if any(value.lower().startswith(scheme.lower()) for value in self._www_authenticate_values(response)):
+        for scheme in ("Negotiate", "NTLM"):
+            if any(
+                value.lower().startswith(scheme.lower())
+                for value in self._www_authenticate_values(response)
+            ):
                 yield from self._retry_using_http_Negotiate_auth(response, scheme)
                 return
 
-    def sync_auth_flow(self, request: httpx2.Request) -> Generator[httpx2.Request, httpx2.Response, None]:
+    def sync_auth_flow(
+        self, request: httpx2.Request
+    ) -> Generator[httpx2.Request, httpx2.Response, None]:
         """Authenticate a request for ``httpx2.Client``.
 
         Request and response bodies are read before the SSPI handshake advances
@@ -243,7 +297,9 @@ class HttpNegotiateAuth(httpx2.Auth):
             except StopIteration:
                 break
 
-    async def async_auth_flow(self, request: httpx2.Request) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
+    async def async_auth_flow(
+        self, request: httpx2.Request
+    ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
         """Authenticate a request for ``httpx2.AsyncClient``.
 
         The Windows SSPI calls are synchronous, but this async generator follows
