@@ -1,3 +1,10 @@
+
+![PyPI Python Version](https://img.shields.io/pypi/pyversions/httpx2-kerberos)
+![Pepy Total Downloads](https://img.shields.io/pepy/dt/httpx2-kerberos)
+
+
+
+
 httpx2-negotiate-sspi
 =====================
 
@@ -8,6 +15,13 @@ SSPI interface.
 This module supports Extended Protection for Authentication (aka Channel
 Binding Hash), which makes it usable for services that require it,
 including Active Directory Federation Services.
+
+Installation
+------------
+
+```python
+pip install httpx2-kerberos
+```
 
 Usage
 -----
