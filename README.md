@@ -1,9 +1,4 @@
 
-![PyPI Python Version](https://img.shields.io/pypi/pyversions/httpx2-kerberos)
-![Pepy Total Downloads](https://img.shields.io/pepy/dt/httpx2-kerberos)
-
-
-
 
 httpx2-negotiate-sspi
 =====================
@@ -20,7 +15,7 @@ Installation
 ------------
 
 ```python
-pip install httpx2-kerberos
+pip install httpx2-negotiate-sspi
 ```
 
 Usage
