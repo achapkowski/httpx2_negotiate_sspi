@@ -1,3 +1,5 @@
+![PyPI Python Version](https://img.shields.io/pypi/pyversions/httpx2-negotiate-sspi)
+![Pepy Total Downloads](https://img.shields.io/pepy/dt/httpx2-negotiate-sspi)
 
 
 httpx2-negotiate-sspi
