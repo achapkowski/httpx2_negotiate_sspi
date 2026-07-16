@@ -1,3 +1,16 @@
+"""Windows SSPI-backed HTTP Negotiate authentication for ``httpx2``.
+
+This module exposes :class:`HttpNegotiateAuth`, a small ``httpx2.Auth``
+implementation that drives the SSPI challenge-response handshake for
+``Negotiate`` and ``NTLM`` HTTP authentication.
+
+The implementation is intentionally Windows-specific because it depends on the
+SSPI interfaces provided by ``pywin32``. When the transport exposes an SSL
+object in the response extensions, the auth flow includes a TLS channel
+binding token derived from the peer certificate so it can interoperate with
+servers that require Extended Protection for Authentication.
+"""
+
 from __future__ import annotations
 from collections.abc import AsyncGenerator, Generator
 import base64
@@ -27,6 +40,10 @@ class HttpNegotiateAuth(httpx2.Auth):
 
     A supplied ``host`` is treated as an explicit SPN host override. If omitted,
     the SPN host is computed independently for each challenged request.
+
+    Use this auth class for Windows clients that need Kerberos or NTLM over
+    HTTP. Avoid it for non-Windows runtimes or for services that expect a
+    different authentication scheme entirely.
     """
 
     requires_request_body = True
@@ -52,12 +69,17 @@ class HttpNegotiateAuth(httpx2.Auth):
         :param password: Password.
         :param domain: NT domain name. Defaults to ``'.'`` for a local account.
         :param service: Kerberos service type for the remote SPN. Defaults to ``'HTTP'``.
-        :param host: Host name for the SPN. Defaults to the request URI host.
-        :param delegate: Whether the user's credentials may be delegated to the server.
+        :param host: Host name for the SPN. When omitted, each challenged request
+            computes its own SPN host from the request URI and may canonicalize it
+            through DNS.
+        :param delegate: Whether the user's credentials may be delegated to the
+            server. Enable this only when the remote service is trusted to act on
+            the caller's behalf.
 
-        If username and password are not specified, the user's default credentials are used.
-        This allows single sign-on to domain resources if the user is currently logged on
-        with a domain account.
+        Explicit credentials are used only when both ``username`` and ``password``
+        are provided. Otherwise the current Windows logon credentials are used,
+        which allows single sign-on to domain resources for interactive users and
+        service accounts.
         """
         if domain is None:
             domain = "."
@@ -74,6 +96,12 @@ class HttpNegotiateAuth(httpx2.Auth):
             self._service = service
 
     def _get_peer_cert(self, response: httpx2.Response) -> bytes | None:
+        """Return the TLS peer certificate from an ``httpx2`` response, if any.
+
+        :param response: Challenge or success response from ``httpx2``.
+        :returns: The DER-encoded peer certificate bytes, or ``None`` when the
+            transport does not expose an SSL object.
+        """
         network_stream = response.extensions.get("network_stream")
         if network_stream is None:
             return None
@@ -85,6 +113,16 @@ class HttpNegotiateAuth(httpx2.Auth):
         return ssl_object.getpeercert(True)
 
     def _www_authenticate_values(self, response: httpx2.Response) -> list[str]:
+        """Return flattened ``WWW-Authenticate`` header values.
+
+        ``httpx2`` preserves repeated headers, while some servers also place
+        multiple challenges in a single comma-separated value. This helper
+        normalizes both cases so the auth flow can inspect each advertised
+        scheme individually.
+
+        :param response: Response containing authentication challenges.
+        :returns: A list of stripped challenge values.
+        """
         values: list[str] = []
         for value in response.headers.get_list("WWW-Authenticate"):
             values.extend(part.strip() for part in value.split(","))
@@ -99,6 +137,20 @@ class HttpNegotiateAuth(httpx2.Auth):
         sec_buffer: Any,
         message: str,
     ) -> None:
+        """Generate the next SSPI token and attach it to the request.
+
+        :param request: Request being retried.
+        :param response: Response that triggered the retry.
+        :param scheme: Authentication scheme name, usually ``Negotiate`` or
+            ``NTLM``.
+        :param clientauth: Active SSPI client context.
+        :param sec_buffer: Security buffer list sent to SSPI.
+        :param message: Log message describing the handshake step.
+        :raises pywintypes.error: Propagated from ``clientauth.authorize``.
+
+        Any cookies set on the challenge response are copied to the retry
+        request so the authentication exchange preserves server affinity.
+        """
         error, auth = clientauth.authorize(sec_buffer)
         request.headers["Authorization"] = "{} {}".format(
             scheme, base64.b64encode(auth[0].Buffer).decode("ASCII")
@@ -112,6 +164,12 @@ class HttpNegotiateAuth(httpx2.Auth):
     def _append_token_buffer(
         self, sec_buffer: Any, max_token: int, token: str | bytes
     ) -> None:
+        """Decode a server token and append it to the SSPI buffer list.
+
+        :param sec_buffer: Security buffer descriptor passed to SSPI.
+        :param max_token: Maximum token size reported by the security package.
+        :param token: Base64-encoded or raw token bytes from the server.
+        """
         tokenbuf = win32security.PySecBufferType(max_token, sspicon.SECBUFFER_TOKEN)
         if isinstance(token, str):
             token = token.encode("ASCII")
@@ -123,6 +181,19 @@ class HttpNegotiateAuth(httpx2.Auth):
         response: httpx2.Response,
         scheme: str,
     ) -> Generator[httpx2.Request, httpx2.Response, None]:
+        """Drive the challenge-response handshake for a single auth scheme.
+
+        :param response: Initial ``401 Unauthorized`` response from the server.
+        :param scheme: Advertised authentication scheme to use.
+        :yields: Follow-up requests with updated ``Authorization`` headers.
+        :raises httpx2.HTTPError: If the server returns an invalid NTLM challenge
+            sequence.
+
+        The method is conservative about retries. If the outgoing request
+        already contains an ``Authorization`` header, or if SSPI fails to
+        generate a token, the handshake is abandoned and control returns to
+        ``httpx2`` without overwriting the existing request state.
+        """
         request = response.request
 
         if "Authorization" in request.headers:
@@ -259,6 +330,16 @@ class HttpNegotiateAuth(httpx2.Auth):
         passing the resulting response back in. Use ``sync_auth_flow`` and
         ``async_auth_flow`` through ``httpx2.Client`` or ``httpx2.AsyncClient``;
         this method exists as the shared implementation for both client modes.
+
+        :param request: Initial request created by the caller.
+        :yields: The original request, followed by any retry requests needed to
+            complete the HTTP authentication exchange.
+        :raises httpx2.HTTPError: If the server returns an invalid NTLM
+            challenge sequence.
+
+        The flow adds ``Connection: Keep-Alive`` to the outgoing request, stops
+        immediately when the response is not ``401``, and tries ``Negotiate``
+        before ``NTLM`` when both are advertised.
         """
         request.headers["Connection"] = "Keep-Alive"
 
@@ -282,6 +363,13 @@ class HttpNegotiateAuth(httpx2.Auth):
 
         Request and response bodies are read before the SSPI handshake advances
         so retry requests can be sent safely through ``httpx2``'s auth flow.
+
+        :param request: Request created by ``httpx2.Client``.
+        :yields: Requests that should be sent synchronously.
+
+        Reading the bodies eagerly ensures that replayed requests do not depend
+        on unread streams that may no longer be available when the server
+        challenges the original request.
         """
         request.read()
 
@@ -305,6 +393,13 @@ class HttpNegotiateAuth(httpx2.Auth):
         The Windows SSPI calls are synchronous, but this async generator follows
         ``httpx2``'s async auth contract and awaits request and response body
         reads before advancing the shared handshake.
+
+        :param request: Request created by ``httpx2.AsyncClient``.
+        :yields: Requests that should be sent asynchronously.
+
+        Just like ``sync_auth_flow``, this eagerly reads request and response
+        bodies so the authentication retry sequence can safely resend the
+        request after a ``401`` challenge.
         """
         await request.aread()
 
