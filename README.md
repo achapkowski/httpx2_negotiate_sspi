@@ -67,13 +67,15 @@ Common configuration
 Explicit credentials:
 
 ```python
+import getpass
+
 import httpx2
 from httpx2_negotiate_sspi import HttpNegotiateAuth
 
 auth = HttpNegotiateAuth(
-    username="svc-http-client",
-    ******,
-    domain="CONTOSO",
+    "svc-http-client",
+    getpass.getpass(),
+    "CONTOSO",
 )
 
 with httpx2.Client(auth=auth) as client:

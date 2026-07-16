@@ -64,6 +64,10 @@ Documentation builds with Sphinx from the ``docs/`` directory. The repository's
 documentation workflows run ``python -m sphinx -W -b html docs docs/_build/html``
 so warnings fail the build.
 
+Pull requests also run the docs workflow and upload the rendered HTML as a
+``docs-html`` workflow artifact so contributors can review the generated
+documentation for a change set.
+
 Credits
 -------
 
