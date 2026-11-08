@@ -17,10 +17,8 @@ auth flow keeps using the current Windows logon credentials.
 Kerberos works only with an explicit host override
 --------------------------------------------------
 
-The library computes the SPN host from the request URL and attempts DNS
-canonicalization per challenged request. If that produces a host name that does
-not match the service principal registered on the server, pass ``host=...``
-explicitly.
+The library uses the request URL host directly for the SPN. If it does not match
+the service principal registered on the server, pass ``host=...`` explicitly.
 
 Extended Protection is required by the server
 ---------------------------------------------

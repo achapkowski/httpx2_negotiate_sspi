@@ -16,7 +16,6 @@ from collections.abc import AsyncGenerator, Generator
 import base64
 import hashlib
 import logging
-import socket
 import struct
 from typing import Any
 
@@ -39,7 +38,7 @@ class HttpNegotiateAuth(httpx2.Auth):
     channel binding data when the transport exposes an SSL object.
 
     A supplied ``host`` is treated as an explicit SPN host override. If omitted,
-    the SPN host is computed independently for each challenged request.
+    the request URL host is used independently for each challenged request.
 
     Use this auth class for Windows clients that need Kerberos or NTLM over
     HTTP. Avoid it for non-Windows runtimes or for services that expect a
@@ -70,8 +69,7 @@ class HttpNegotiateAuth(httpx2.Auth):
         :param domain: NT domain name. Defaults to ``'.'`` for a local account.
         :param service: Kerberos service type for the remote SPN. Defaults to ``'HTTP'``.
         :param host: Host name for the SPN. When omitted, each challenged request
-            computes its own SPN host from the request URI and may canonicalize it
-            through DNS.
+            uses the host from its request URI.
         :param delegate: Whether the user's credentials may be delegated to the
             server. Enable this only when the remote service is trusted to act on
             the caller's behalf.
@@ -202,14 +200,6 @@ class HttpNegotiateAuth(httpx2.Auth):
         host = self._host
         if host is None:
             host = request.url.host
-            try:
-                host = socket.getaddrinfo(host, None, 0, 0, 0, socket.AI_CANONNAME)[0][
-                    3
-                ]
-            except socket.gaierror as e:
-                _logger.info(
-                    "Skipping canonicalization of name %s due to error: %s", host, e
-                )
 
         targetspn = "{}/{}".format(self._service, host)
 

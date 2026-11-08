@@ -110,7 +110,7 @@ Configuration reference
 - `service`: Kerberos service class used when constructing the SPN.
   Default: `"HTTP"`.
 - `host`: Explicit SPN host override. When omitted, the request host is used
-  and may be canonicalized through DNS per challenged request.
+  directly for each challenged request.
 - `delegate`: Enables `ISC_REQ_DELEGATE` so the server may receive delegated
   credentials. Default: `False`.
 
@@ -119,9 +119,7 @@ Behavior notes
 
 - If both `username` and `password` are omitted, the current Windows logon
   credentials are used.
-- If `host` is omitted, the SPN host is derived per request and the library
-  attempts DNS canonicalization. If canonicalization fails, it falls back to
-  the original request host.
+- If `host` is omitted, the SPN host is taken directly from each request URL.
 - When the `httpx2` transport exposes an SSL object, the library sends a TLS
   channel binding token derived from the peer certificate. This is required by
   some services that enforce Extended Protection for Authentication.
@@ -134,8 +132,8 @@ Troubleshooting
 - If you keep receiving `401 Unauthorized`, confirm the server is advertising
   `Negotiate` or `NTLM` and that the account has permission to access the
   service.
-- If Kerberos works only with an explicit `host`, verify that DNS
-  canonicalization is resolving the expected SPN.
+- If Kerberos works only with an explicit `host`, verify that the request URL
+  host matches the service principal registered on the server.
 - If a service requires Extended Protection, make sure the request is using
   TLS and that the transport exposes the peer certificate to `httpx2`.
 - If you are authenticating as another account, provide both `username` and

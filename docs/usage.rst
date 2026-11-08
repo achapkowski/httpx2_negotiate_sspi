@@ -21,8 +21,8 @@ Configuration options
    Kerberos service class used to build the SPN. The default is ``"HTTP"``.
 
 ``host``
-   Explicit SPN host override. When omitted, the request host is used and may
-   be canonicalized with DNS for each challenged request.
+   Explicit SPN host override. When omitted, the request URL host is used
+   directly for each challenged request.
 
 ``delegate``
    Enables delegated credentials by setting ``ISC_REQ_DELEGATE``. Only enable
@@ -31,12 +31,11 @@ Configuration options
 SPN selection
 -------------
 
-When ``host`` is not provided, the auth flow derives the SPN host from the
-request URL. It then attempts DNS canonicalization. If canonicalization fails,
-the original request host is used instead.
+When ``host`` is not provided, the auth flow uses the host from the request URL
+directly. It does not use reverse DNS to select the SPN host.
 
-This behavior matters when the HTTP endpoint and the Kerberos SPN do not share
-the same canonical host name. In those cases, pass an explicit ``host`` value.
+If the request URL host and the Kerberos SPN host differ, pass an explicit
+``host`` value.
 
 .. code-block:: python
 

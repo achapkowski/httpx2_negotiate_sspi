@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import importlib
+import socket
 import sys
 import types
 import unittest
@@ -104,11 +105,6 @@ def _start_windows_patches(test_case):
         mock.patch.object(api.sspicon, "SECURITY_NETWORK_DREP", 3, create=True),
         mock.patch.object(api.sspicon, "SECBUFFER_CHANNEL_BINDINGS", 4, create=True),
         mock.patch.object(api.sspicon, "SECBUFFER_TOKEN", 5, create=True),
-        mock.patch.object(
-            api.socket,
-            "getaddrinfo",
-            return_value=[(None, None, None, "canonical.example.com")],
-        ),
     ]
     for patch in patches:
         patch.start()
@@ -144,7 +140,7 @@ class HttpNegotiateAuthTests(unittest.TestCase):
         self.assertEqual(
             retry_request.headers["Authorization"], "Negotiate aW5pdGlhbC10b2tlbg=="
         )
-        self.assertEqual(self.clients[0].targetspn, "HTTP/canonical.example.com")
+        self.assertEqual(self.clients[0].targetspn, "HTTP/example.com")
         self.assertIs(ssl_object.binary_form, True)
 
         channel_buffers = [
@@ -189,8 +185,6 @@ class HttpNegotiateAuthTests(unittest.TestCase):
             self.clients[0].scflags,
             api.sspicon.ISC_REQ_MUTUAL_AUTH | api.sspicon.ISC_REQ_DELEGATE,
         )
-        api.socket.getaddrinfo.assert_not_called()
-
         with self.assertRaises(StopIteration):
             flow.send(httpx2.Response(200, request=retry_request))
 
@@ -271,29 +265,28 @@ class HttpNegotiateAuthTests(unittest.TestCase):
 
         self.assertEqual(self.clients, [])
 
-    def test_dns_canonicalization_failure_uses_request_host(self):
-        api.socket.getaddrinfo.side_effect = api.socket.gaierror("no canonical name")
+    def test_request_host_is_used_without_dns_lookup(self):
         auth = api.HttpNegotiateAuth()
         request = httpx2.Request("GET", "https://example.com/private")
         flow = auth.auth_flow(request)
 
-        first_request = next(flow)
-        retry_request = flow.send(
-            httpx2.Response(
-                401, headers={"WWW-Authenticate": "Negotiate"}, request=first_request
+        with mock.patch.object(socket, "getaddrinfo") as getaddrinfo:
+            first_request = next(flow)
+            retry_request = flow.send(
+                httpx2.Response(
+                    401,
+                    headers={"WWW-Authenticate": "Negotiate"},
+                    request=first_request,
+                )
             )
-        )
 
         self.assertEqual(self.clients[0].targetspn, "HTTP/example.com")
+        getaddrinfo.assert_not_called()
 
         with self.assertRaises(StopIteration):
             flow.send(httpx2.Response(200, request=retry_request))
 
     def test_computed_host_is_not_reused_across_requests(self):
-        def canonicalize(host, *args):
-            return [(None, None, None, f"canonical-{host}")]
-
-        api.socket.getaddrinfo.side_effect = canonicalize
         auth = api.HttpNegotiateAuth()
 
         first_request = httpx2.Request("GET", "https://first.example.com/private")
@@ -320,8 +313,8 @@ class HttpNegotiateAuthTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(self.clients[0].targetspn, "HTTP/canonical-first.example.com")
-        self.assertEqual(self.clients[1].targetspn, "HTTP/canonical-second.example.com")
+        self.assertEqual(self.clients[0].targetspn, "HTTP/first.example.com")
+        self.assertEqual(self.clients[1].targetspn, "HTTP/second.example.com")
         self.assertIsNone(auth._host)
 
         with self.assertRaises(StopIteration):

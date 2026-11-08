@@ -52,7 +52,7 @@ The tests cover:
 - sync and async auth flows
 - explicit credentials and delegation flags
 - TLS channel binding behavior
-- DNS canonicalization fallback
+- Direct request URL host selection for the SPN
 - cookie propagation across retries
 - Kerberos final-token handling
 - malformed NTLM challenge handling
