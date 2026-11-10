@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "httpx2-negotiate-sspi"
 dynamic = ["version"]
-description = "HTTPX Negotiate authentication using Windows SSPI."
+description = "HTTP Negotiate/Kerberos/NTLM authentication for httpx2 via pyspnego."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -15,8 +15,8 @@ authors = [
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "Environment :: Win32 (MS Windows)",
     "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -27,8 +27,11 @@ classifiers = [
     "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
-    "httpx2>=2.1.0,<3",
-    "pywin32>=223; platform_system == 'Windows'",
+    "cryptography>=50.0.0",
+    "httpx2>=2.16.0,<3",
+    "pyspnego>=0.12.4; platform_system == 'Windows'",
+    "pyspnego[kerberos]>=0.12.4; platform_system != 'Windows'",
+    "sspilib>=0.6.0; platform_system == 'Windows'",
 ]
 
 [project.optional-dependencies]
@@ -44,3 +47,13 @@ Documentation = "https://achapkowski.github.io/httpx2_negotiate_sspi"
 
 [tool.setuptools.dynamic]
 version = { attr = "httpx2_negotiate_sspi.__version__.__version__" }
+
+[tool.coverage.run]
+omit = [
+    "tests/test_integration_iis.py",
+    "tests/test_integration_kerberos.py",
+    "tests/integration_server.py",
+]
+
+[tool.coverage.report]
+fail_under = 100
