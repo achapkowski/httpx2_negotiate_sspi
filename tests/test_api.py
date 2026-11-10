@@ -179,6 +179,27 @@ class HttpNegotiateAuthTests(unittest.TestCase):
         with self.assertRaises(StopIteration):
             flow.send(httpx2.Response(200, request=retry_request))
 
+    def test_negotiate_uses_kerberos_protocol_with_gssapi(self):
+        auth = api.HttpNegotiateAuth()
+        request = httpx2.Request("GET", "http://example.com/private")
+        flow = auth.auth_flow(request)
+
+        first_request = next(flow)
+        with mock.patch.object(api.sys, "platform", "linux"):
+            flow.send(
+                httpx2.Response(
+                    401,
+                    headers={"WWW-Authenticate": "Negotiate"},
+                    request=first_request,
+                )
+            )
+
+        self.assertEqual(self.contexts[0].create_kwargs["protocol"], "kerberos")
+        self.assertEqual(
+            self.contexts[0].create_kwargs["options"],
+            spnego.NegotiateOptions.use_gssapi,
+        )
+
     def test_peer_cert_is_optional(self):
         auth = api.HttpNegotiateAuth()
         request = httpx2.Request("GET", "https://example.com/private")

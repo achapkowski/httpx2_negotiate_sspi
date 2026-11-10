@@ -68,7 +68,7 @@ class NegotiateHandler(http.server.BaseHTTPRequestHandler):
             ctx = spnego.server(
                 service="http",
                 hostname="localhost",
-                protocol="negotiate",
+                protocol="kerberos",
                 options=spnego.NegotiateOptions.use_gssapi,
             )
             out_token = ctx.step(in_token)

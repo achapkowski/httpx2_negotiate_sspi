@@ -328,13 +328,17 @@ class HttpNegotiateAuth(httpx2.Auth):
             else:
                 options = spnego.NegotiateOptions.use_gssapi
 
+        protocol = scheme.lower()
+        if sys.platform != "win32" and protocol == "negotiate":
+            protocol = "kerberos"
+
         try:
             return spnego.client(
                 username=username,
                 password=password,
                 hostname=hostname,
                 service=self._service,
-                protocol=scheme.lower(),
+                protocol=protocol,
                 context_req=context_req,
                 options=options,
                 channel_bindings=channel_bindings,
