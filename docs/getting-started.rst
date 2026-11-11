@@ -18,7 +18,7 @@ Platform support
 Requirements
 ------------
 
-- Python 3.10 or newer
+- Python 3.11 or newer
 - A server that challenges with ``WWW-Authenticate: Negotiate`` or
   ``WWW-Authenticate: NTLM``
 - **Linux/macOS only:** system Kerberos libraries must be present before

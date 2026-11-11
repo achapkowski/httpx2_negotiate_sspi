@@ -29,6 +29,19 @@ jobs:
       - name: Build source distribution and pure wheel
         run: python -m build
 
+      - name: Fetch dependency graph SBOM (PEP 770)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api /repos/${{ github.repository }}/dependency-graph/sbom \
+            --jq '.sbom' > dist/httpx2_negotiate_sspi.spdx.json
+
+      - name: Inject SBOM into wheel (PEP 770)
+        run: |
+          python .github/scripts/inject_sbom.py \
+            dist/*.whl \
+            dist/httpx2_negotiate_sspi.spdx.json
+
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:

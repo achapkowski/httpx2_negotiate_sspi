@@ -410,7 +410,7 @@ class HttpNegotiateAuthTests(unittest.TestCase):
                 )
 
     def test_response_spnego_error_raises_http_error(self):
-        auth = api.HttpNegotiateAuth(host="server.example.com")
+        auth = api.HttpNegotiateAuth(host="server.example.com", mutual_authentication=False)
         request = httpx2.Request("GET", "https://example.com/private")
         flow = auth.auth_flow(request)
 
@@ -530,7 +530,7 @@ class HttpNegotiateAuthTests(unittest.TestCase):
             flow.send(httpx2.Response(200, request=second_retry_request))
 
     def test_malformed_ntlm_challenge_raises_httpx_error(self):
-        auth = api.HttpNegotiateAuth(host="server.example.com")
+        auth = api.HttpNegotiateAuth(host="server.example.com", mutual_authentication=False)
         request = httpx2.Request("GET", "https://example.com/private")
         flow = auth.auth_flow(request)
 

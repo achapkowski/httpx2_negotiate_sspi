@@ -126,8 +126,10 @@ By default, `mutual_authentication=True`. The auth flow raises
 `MutualAuthenticationError` (a subclass of `httpx2.HTTPError`) when the server
 does not send a valid final authentication token.
 
-**NTLM cannot prove the server's identity.** Set `mutual_authentication=False`
-when you know the endpoint only supports NTLM:
+**NTLM cannot prove the server's identity.** When a server advertises only
+NTLM, `MutualAuthenticationError` is raised at scheme selection — before any
+credential token is generated or sent. Set `mutual_authentication=False` when
+you know the endpoint only supports NTLM and you accept this limitation:
 
 ```python
 auth = HttpNegotiateAuth(mutual_authentication=False)
