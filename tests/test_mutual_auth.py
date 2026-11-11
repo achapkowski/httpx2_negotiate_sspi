@@ -183,23 +183,35 @@ class MutualAuthMultiLegTests(unittest.TestCase):
     def tearDown(self):
         self.patch.stop()
 
-    def test_5_multi_leg_no_final_token_raises(self):
-        """401 challenge then 200 with no token → MutualAuthenticationError."""
+    def test_5_ntlm_mutual_auth_raises_before_credentials(self):
+        """NTLM advertised + mutual_authentication=True → raises before sending credentials."""
         auth = api.HttpNegotiateAuth(host="server.example.com", mutual_authentication=True)
         request = httpx2.Request("GET", "https://example.com/")
         flow = auth.auth_flow(request)
         first = next(flow)
-        retry = flow.send(_make_401(first, "NTLM"))
-        challenge_b64 = base64.b64encode(b"ntlm-challenge").decode("ascii")
+        with self.assertRaises(api.MutualAuthenticationError) as exc_ctx:
+            flow.send(_make_401(first, "NTLM"))
+        self.assertIn("ntlm", str(exc_ctx.exception).lower())
+        # spnego.client must not have been called — no credentials were sent
+        self.assertEqual(self.contexts, [])
+
+    def test_5_multi_leg_negotiate_no_final_token_raises(self):
+        """Multi-leg Negotiate exchange ending with no final token → MutualAuthenticationError."""
+        auth = api.HttpNegotiateAuth(host="server.example.com", mutual_authentication=True)
+        request = httpx2.Request("GET", "https://example.com/")
+        flow = auth.auth_flow(request)
+        first = next(flow)
+        retry = flow.send(_make_401(first, "Negotiate"))
+        challenge_b64 = base64.b64encode(b"challenge").decode("ascii")
         second_retry = flow.send(
             httpx2.Response(
                 401,
-                headers={"WWW-Authenticate": "NTLM {}".format(challenge_b64)},
+                headers={"WWW-Authenticate": "Negotiate {}".format(challenge_b64)},
                 request=retry,
             )
         )
         with self.assertRaises(api.MutualAuthenticationError):
-            flow.send(_make_200(second_retry, final_token=None, scheme="NTLM"))
+            flow.send(_make_200(second_retry, final_token=None, scheme="Negotiate"))
 
     def test_5b_multi_leg_success_mutual_auth_false(self):
         """Multi-leg with mutual_authentication=False succeeds without final token."""
@@ -238,49 +250,41 @@ class MutualAuthMultiLegTests(unittest.TestCase):
                     request=retry,
                 ))
 
-    def test_6_ntlm_complete_no_mutual_auth_flag_raises(self):
+    def test_6_negotiate_complete_no_mutual_auth_flag_raises(self):
         """ctx.complete=True but mutual_auth flag not set → MutualAuthenticationError.
 
-        Simulates NTLM which can set complete=True without proving server identity.
+        A Negotiate context that marks itself complete without the mutual_auth
+        attribute must still fail the mutual-auth check.
         """
-        instances: list = []
-
-        class NtlmContext:
+        class NoMutualAuthContext:
             def __init__(self, **kwargs):
                 self.complete = False
-                # No mutual_auth flag even when complete
                 self.context_attr = spnego.ContextReq(0)
-                self.calls: list = []
-                instances.append(self)
 
             def step(self, in_token=None):
-                self.calls.append(in_token)
                 if in_token is None:
                     return b"initial-token"
-                # Challenge step: mark complete but WITHOUT mutual_auth
                 self.complete = True
                 return b"response-token"
 
-        def ntlm_client(**kwargs):
-            return NtlmContext(**kwargs)
-
         auth = api.HttpNegotiateAuth(host="server.example.com")
 
-        with mock.patch.object(api.spnego, "client", side_effect=ntlm_client):
+        with mock.patch.object(api.spnego, "client",
+                               side_effect=lambda **kw: NoMutualAuthContext()):
             request = httpx2.Request("GET", "https://example.com/")
             flow = auth.auth_flow(request)
             first = next(flow)
-            retry = flow.send(_make_401(first, "NTLM"))
+            retry = flow.send(_make_401(first, "Negotiate"))
             challenge_b64 = base64.b64encode(b"challenge").decode("ascii")
             second_retry = flow.send(
                 httpx2.Response(
                     401,
-                    headers={"WWW-Authenticate": "NTLM {}".format(challenge_b64)},
+                    headers={"WWW-Authenticate": "Negotiate {}".format(challenge_b64)},
                     request=retry,
                 )
             )
             with self.assertRaises(api.MutualAuthenticationError):
-                flow.send(_make_200(second_retry, final_token=None, scheme="NTLM"))
+                flow.send(_make_200(second_retry, final_token=None, scheme="Negotiate"))
 
 
 class CredentialAndHostnameTests(unittest.TestCase):
@@ -506,7 +510,8 @@ class RoundLimitTest(unittest.TestCase):
 
         with mock.patch.object(api.spnego, "client",
                                side_effect=lambda **kw: NeverDoneContext(**kw)):
-            auth = api.HttpNegotiateAuth(host="server.example.com")
+            auth = api.HttpNegotiateAuth(host="server.example.com",
+                                         mutual_authentication=False)
             request = httpx2.Request("GET", "https://example.com/")
             flow = auth.auth_flow(request)
             first = next(flow)

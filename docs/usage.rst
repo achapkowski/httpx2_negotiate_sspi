@@ -71,8 +71,14 @@ With ``mutual_authentication=True`` (the default) the library verifies that:
 If either check fails, :exc:`~httpx2_negotiate_sspi.MutualAuthenticationError`
 is raised. This is a subclass of :exc:`httpx2.HTTPError`.
 
-NTLM sets ``complete=True`` but does not set the ``mutual_auth`` flag, so it
-always fails this check. Set ``mutual_authentication=False`` for NTLM.
+When the server advertises only ``NTLM``, the library raises
+:exc:`~httpx2_negotiate_sspi.MutualAuthenticationError` at scheme selection —
+before ``spnego.client`` is called and before any credential token is
+generated or sent. This is a fail-secure guarantee: a malicious server
+advertising only NTLM cannot obtain the user's credential-derived response.
+
+Set ``mutual_authentication=False`` for NTLM-only endpoints where you accept
+this limitation:
 
 SPN and hostname canonicalization
 ----------------------------------

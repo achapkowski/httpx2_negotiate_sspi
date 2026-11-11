@@ -520,6 +520,11 @@ class HttpNegotiateAuth(httpx2.Auth):
                 value.lower().startswith(scheme.lower())
                 for value in self._www_authenticate_values(response)
             ):
+                if scheme == "NTLM" and self._mutual_authentication:
+                    raise MutualAuthenticationError(
+                        "NTLM does not support mutual authentication; "
+                        "set mutual_authentication=False to allow NTLM"
+                    )
                 yield from self._retry_using_http_Negotiate_auth(response, scheme)
                 return
 
