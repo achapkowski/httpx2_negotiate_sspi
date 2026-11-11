@@ -11,28 +11,27 @@ permissions:
 jobs:
   build:
     name: Build package
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: '3.13'
           cache: pip
 
       - name: Install build tools
-        run: python -m pip install build wheel
+        run: python -m pip install build
 
-      - name: Build distribution
+      - name: Build source distribution and pure wheel
         run: python -m build
 
-      - name: Tag wheel as Windows-only
-        shell: pwsh
-        run: |
-          $pythonTag = python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')"
-          $wheel = Get-ChildItem dist\*-py3-none-any.whl | Select-Object -First 1
-          if ($null -eq $wheel) { throw "No pure wheel found in dist" }
-          python -m wheel tags --remove --python-tag $pythonTag --abi-tag $pythonTag --platform-tag win_amd64 $wheel.FullName
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error

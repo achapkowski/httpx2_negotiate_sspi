@@ -1,0 +1,253 @@
+name: Integration Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Job 1: Real Kerberos on Ubuntu
+  # --------------------------------------------------------------------------
+  linux-kerberos:
+    name: Linux Kerberos integration
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Kerberos server and client packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q \
+            krb5-kdc krb5-admin-server krb5-user \
+            libkrb5-dev
+
+      - name: Configure Kerberos realm TEST.LOCAL
+        run: |
+          cat <<'EOF' | sudo tee /etc/krb5.conf
+          [libdefaults]
+              default_realm = TEST.LOCAL
+              rdns = false
+              dns_canonicalize_hostname = false
+              qualify_shortname = ""
+              forwardable = true
+
+          [realms]
+              TEST.LOCAL = {
+                  kdc = 127.0.0.1
+                  admin_server = 127.0.0.1
+              }
+
+          [domain_realm]
+              .local = TEST.LOCAL
+              local = TEST.LOCAL
+          EOF
+
+          cat <<'EOF' | sudo tee /etc/krb5kdc/kdc.conf
+          [kdcdefaults]
+              kdc_ports = 88
+
+          [realms]
+              TEST.LOCAL = {
+                  database_name = /var/lib/krb5kdc/principal
+                  admin_keytab = /etc/krb5kdc/kadm5.keytab
+                  acl_file = /etc/krb5kdc/kadm5.acl
+                  max_life = 10h
+                  max_renewable_life = 7d
+              }
+          EOF
+
+          echo "*/admin@TEST.LOCAL *" | sudo tee /etc/krb5kdc/kadm5.acl
+
+      - name: Create KDC database and principals
+        run: |
+          KDC_PASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(20))")
+          echo "::add-mask::$KDC_PASS"
+          sudo kdb5_util create -s -P "$KDC_PASS" -r TEST.LOCAL
+
+          USER_PASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(20))")
+          echo "::add-mask::$USER_PASS"
+          sudo kadmin.local -q "addprinc -pw $USER_PASS testuser@TEST.LOCAL"
+          sudo kadmin.local -q "addprinc -randkey HTTP/localhost@TEST.LOCAL"
+          sudo kadmin.local -q "ktadd -k /tmp/http.keytab HTTP/localhost@TEST.LOCAL"
+          sudo chmod 644 /tmp/http.keytab
+
+          echo "KRB_USER_PASS=$USER_PASS" >> "$GITHUB_ENV"
+
+      - name: Start KDC
+        run: |
+          sudo systemctl start krb5-kdc
+          sudo systemctl start krb5-admin-server
+          sleep 2
+
+      - name: Obtain Kerberos ticket
+        run: |
+          echo "$KRB_USER_PASS" | kinit testuser@TEST.LOCAL
+          klist
+
+      - name: Install package
+        run: pip install -e ".[dev]"
+
+      - name: Start integration servers
+        run: |
+          KRB5_KTNAME=/tmp/http.keytab python tests/integration_server.py 8080 good &
+          KRB5_KTNAME=/tmp/http.keytab python tests/integration_server.py 8081 no-token &
+          KRB5_KTNAME=/tmp/http.keytab python tests/integration_server.py 8082 bad-token &
+          sleep 2
+          echo "KRB_TEST_URL=http://localhost:8080/" >> "$GITHUB_ENV"
+          echo "KRB_PORT_GOOD=8080" >> "$GITHUB_ENV"
+          echo "KRB_PORT_NO_TOKEN=8081" >> "$GITHUB_ENV"
+          echo "KRB_PORT_BAD_TOKEN=8082" >> "$GITHUB_ENV"
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  # --------------------------------------------------------------------------
+  # Job 2: NTLM + channel binding on Windows IIS
+  # --------------------------------------------------------------------------
+  windows-iis:
+    name: Windows IIS integration
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install IIS with Windows Authentication
+        shell: powershell
+        run: |
+          Install-WindowsFeature Web-Server, Web-Windows-Auth -IncludeManagementTools
+
+      - name: Configure Default Web Site (port 443, SHA-256 cert)
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          # Disable anonymous auth, enable Windows auth
+          Set-WebConfigurationProperty `
+            -Filter "system.webServer/security/authentication/anonymousAuthentication" `
+            -Location "Default Web Site" -Name enabled -Value $false
+          Set-WebConfigurationProperty `
+            -Filter "system.webServer/security/authentication/windowsAuthentication" `
+            -Location "Default Web Site" -Name enabled -Value $true
+
+          # Require Extended Protection (channel binding)
+          Set-WebConfigurationProperty `
+            -Filter "system.webServer/security/authentication/windowsAuthentication/extendedProtection" `
+            -Location "Default Web Site" -Name tokenChecking -Value Require
+
+          # Self-signed SHA-256 cert for localhost
+          $cert256 = New-SelfSignedCertificate `
+            -DnsName localhost `
+            -CertStoreLocation Cert:\LocalMachine\My `
+            -HashAlgorithm SHA256
+
+          # Create HTTPS binding on 443
+          New-WebBinding -Name "Default Web Site" -Protocol https -Port 443 -HostHeader ""
+          New-Item "IIS:\SslBindings\0.0.0.0!443" -Value (Get-Item "Cert:\LocalMachine\My\$($cert256.Thumbprint)")
+
+      - name: Create second IIS site (port 8443, SHA-384 cert)
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+
+          # Self-signed SHA-384 cert for localhost
+          $cert384 = New-SelfSignedCertificate `
+            -DnsName localhost `
+            -CertStoreLocation Cert:\LocalMachine\My `
+            -HashAlgorithm SHA384
+
+          # Create site
+          $sitePath = "C:\inetpub\wwwroot384"
+          New-Item -ItemType Directory -Force -Path $sitePath
+          Set-Content -Path "$sitePath\index.html" -Value "IIS SHA-384 integration test"
+          New-Website -Name "TestSite384" -Port 8443 -PhysicalPath $sitePath -Force
+          Remove-WebBinding -Name "TestSite384" -Protocol http -Port 8443
+
+          # Auth settings
+          Set-WebConfigurationProperty `
+            -Filter "system.webServer/security/authentication/anonymousAuthentication" `
+            -Location "TestSite384" -Name enabled -Value $false
+          Set-WebConfigurationProperty `
+            -Filter "system.webServer/security/authentication/windowsAuthentication" `
+            -Location "TestSite384" -Name enabled -Value $true
+          Set-WebConfigurationProperty `
+            -Filter "system.webServer/security/authentication/windowsAuthentication/extendedProtection" `
+            -Location "TestSite384" -Name tokenChecking -Value Require
+
+          # HTTPS binding
+          New-WebBinding -Name "TestSite384" -Protocol https -Port 8443 -HostHeader ""
+          New-Item "IIS:\SslBindings\0.0.0.0!8443" -Value (Get-Item "Cert:\LocalMachine\My\$($cert384.Thumbprint)")
+
+      - name: Restart IIS to activate all bindings
+        shell: powershell
+        run: iisreset /noforce
+
+      - name: Disable loopback check
+        shell: powershell
+        run: |
+          Set-ItemProperty `
+            -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" `
+            -Name DisableLoopbackCheck -Value 1 -Type DWord -Force
+
+      - name: Create test user and export environment
+        shell: powershell
+        run: |
+          $pass = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 24 |
+            ForEach-Object { [char]$_ })
+          Write-Host "::add-mask::$pass"
+          $secPass = ConvertTo-SecureString $pass -AsPlainText -Force
+          New-LocalUser -Name "iistestuser" -Password $secPass -PasswordNeverExpires
+          Add-LocalGroupMember -Group "IIS_IUSRS" -Member "iistestuser" -ErrorAction SilentlyContinue
+
+          "TEST_USER=iistestuser"           >> $env:GITHUB_ENV
+          "TEST_PASSWORD=$pass"             >> $env:GITHUB_ENV
+          "IIS_TEST_URL=https://localhost/" >> $env:GITHUB_ENV
+          "IIS_TEST_URL_SHA384=https://localhost:8443/" >> $env:GITHUB_ENV
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+  # --------------------------------------------------------------------------
+  # Job 3: Unit tests on all supported platforms and Python versions
+  # --------------------------------------------------------------------------
+  unit-tests:
+    name: Unit tests (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system Kerberos libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libkrb5-dev krb5-config
+
+      - name: Install package and dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run unit tests with coverage
+        run: |
+          python -m coverage run -m unittest discover -s tests -v
+          python -m coverage report -m --fail-under=90
