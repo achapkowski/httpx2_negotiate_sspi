@@ -75,7 +75,10 @@ jobs:
           echo "::add-mask::$USER_PASS"
           sudo kadmin.local -q "addprinc -pw $USER_PASS testuser@TEST.LOCAL"
           sudo kadmin.local -q "addprinc -randkey HTTP/localhost@TEST.LOCAL"
+          FQDN=$(hostname -f)
+          sudo kadmin.local -q "addprinc -randkey HTTP/$FQDN@TEST.LOCAL"
           sudo kadmin.local -q "ktadd -k /tmp/http.keytab HTTP/localhost@TEST.LOCAL"
+          sudo kadmin.local -q "ktadd -k /tmp/http.keytab HTTP/$FQDN@TEST.LOCAL"
           sudo chmod 644 /tmp/http.keytab
 
           echo "KRB_USER_PASS=$USER_PASS" >> "$GITHUB_ENV"
@@ -153,8 +156,7 @@ jobs:
 
           # Create HTTPS binding on 443
           New-WebBinding -Name "Default Web Site" -Protocol https -Port 443 -HostHeader ""
-          $binding = Get-WebBinding -Name "Default Web Site" -Protocol https -Port 443
-          $binding.AddSslCertificate($cert256.Thumbprint, "My")
+          New-Item "IIS:\SslBindings\0.0.0.0!443" -Value (Get-Item "Cert:\LocalMachine\My\$($cert256.Thumbprint)")
 
           # Restart site
           Stop-Website "Default Web Site"
@@ -189,8 +191,7 @@ jobs:
 
           # HTTPS binding
           New-WebBinding -Name "TestSite384" -Protocol https -Port 8443 -HostHeader ""
-          $binding384 = Get-WebBinding -Name "TestSite384" -Protocol https -Port 8443
-          $binding384.AddSslCertificate($cert384.Thumbprint, "My")
+          New-Item "IIS:\SslBindings\0.0.0.0!8443" -Value (Get-Item "Cert:\LocalMachine\My\$($cert384.Thumbprint)")
 
           Start-Website "TestSite384"
 
@@ -232,7 +233,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
 
     steps:
       - uses: actions/checkout@v4
