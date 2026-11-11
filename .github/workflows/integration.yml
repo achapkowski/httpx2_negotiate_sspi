@@ -171,6 +171,7 @@ jobs:
           $sitePath = "C:\inetpub\wwwroot384"
           New-Item -ItemType Directory -Force -Path $sitePath
           New-Website -Name "TestSite384" -Port 8443 -PhysicalPath $sitePath -Force
+          Remove-WebBinding -Name "TestSite384" -Protocol http -Port 8443
 
           # Auth settings
           Set-WebConfigurationProperty `
