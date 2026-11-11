@@ -170,6 +170,7 @@ jobs:
           # Create site
           $sitePath = "C:\inetpub\wwwroot384"
           New-Item -ItemType Directory -Force -Path $sitePath
+          Set-Content -Path "$sitePath\index.html" -Value "IIS SHA-384 integration test"
           New-Website -Name "TestSite384" -Port 8443 -PhysicalPath $sitePath -Force
           Remove-WebBinding -Name "TestSite384" -Protocol http -Port 8443
 
