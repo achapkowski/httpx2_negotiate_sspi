@@ -75,7 +75,7 @@ jobs:
           echo "::add-mask::$USER_PASS"
           sudo kadmin.local -q "addprinc -pw $USER_PASS testuser@TEST.LOCAL"
           sudo kadmin.local -q "addprinc -randkey HTTP/localhost@TEST.LOCAL"
-          FQDN=$(hostname -f)
+          FQDN=$(python3 -c "import socket; print(socket.getaddrinfo('localhost',None,0,0,0,socket.AI_CANONNAME)[0][3])")
           DOMAIN=$(echo "$FQDN" | sed 's/^[^.]*\.//')
           sudo sed -i "/\[domain_realm\]/a\\    .$DOMAIN = TEST.LOCAL\n    $FQDN = TEST.LOCAL" /etc/krb5.conf
           sudo kadmin.local -q "addprinc -randkey HTTP/$FQDN@TEST.LOCAL"
@@ -194,8 +194,6 @@ jobs:
           # HTTPS binding
           New-WebBinding -Name "TestSite384" -Protocol https -Port 8443 -HostHeader ""
           New-Item "IIS:\SslBindings\0.0.0.0!8443" -Value (Get-Item "Cert:\LocalMachine\My\$($cert384.Thumbprint)")
-
-          Start-Website "TestSite384"
 
       - name: Disable loopback check
         shell: powershell
