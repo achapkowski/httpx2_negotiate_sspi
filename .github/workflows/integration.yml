@@ -76,6 +76,8 @@ jobs:
           sudo kadmin.local -q "addprinc -pw $USER_PASS testuser@TEST.LOCAL"
           sudo kadmin.local -q "addprinc -randkey HTTP/localhost@TEST.LOCAL"
           FQDN=$(hostname -f)
+          DOMAIN=$(echo "$FQDN" | sed 's/^[^.]*\.//')
+          sudo sed -i "/\[domain_realm\]/a\\    .$DOMAIN = TEST.LOCAL\n    $FQDN = TEST.LOCAL" /etc/krb5.conf
           sudo kadmin.local -q "addprinc -randkey HTTP/$FQDN@TEST.LOCAL"
           sudo kadmin.local -q "ktadd -k /tmp/http.keytab HTTP/localhost@TEST.LOCAL"
           sudo kadmin.local -q "ktadd -k /tmp/http.keytab HTTP/$FQDN@TEST.LOCAL"
