@@ -126,12 +126,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install IIS with Windows Authentication
-        shell: pwsh
+        shell: powershell
         run: |
           Install-WindowsFeature Web-Server, Web-Windows-Auth -IncludeManagementTools
 
       - name: Configure Default Web Site (port 443, SHA-256 cert)
-        shell: pwsh
+        shell: powershell
         run: |
           Import-Module WebAdministration
 
@@ -163,7 +163,7 @@ jobs:
           Start-Website "Default Web Site"
 
       - name: Create second IIS site (port 8443, SHA-384 cert)
-        shell: pwsh
+        shell: powershell
         run: |
           Import-Module WebAdministration
 
@@ -196,14 +196,14 @@ jobs:
           Start-Website "TestSite384"
 
       - name: Disable loopback check
-        shell: pwsh
+        shell: powershell
         run: |
           Set-ItemProperty `
             -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" `
             -Name DisableLoopbackCheck -Value 1 -Type DWord -Force
 
       - name: Create test user and export environment
-        shell: pwsh
+        shell: powershell
         run: |
           $pass = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 24 |
             ForEach-Object { [char]$_ })
