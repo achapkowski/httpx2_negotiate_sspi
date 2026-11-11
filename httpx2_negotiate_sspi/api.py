@@ -381,14 +381,17 @@ class HttpNegotiateAuth(httpx2.Auth):
                 except Exception:
                     final_token = None
 
+        final_token_processed = False
         if final_token is not None and not ctx.complete:
             try:
                 ctx.step(final_token)
+                final_token_processed = True
             except (spnego.exceptions.SpnegoError, ValueError) as e:
                 _logger.debug("Final token step failed: %s", e)
 
         if self._mutual_authentication and not (
             ctx.complete
+            and final_token_processed
             and (getattr(ctx, "context_attr", 0) or 0) & spnego.ContextReq.mutual_auth
         ):
             raise MutualAuthenticationError(

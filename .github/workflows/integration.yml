@@ -195,6 +195,9 @@ jobs:
           New-WebBinding -Name "TestSite384" -Protocol https -Port 8443 -HostHeader ""
           New-Item "IIS:\SslBindings\0.0.0.0!8443" -Value (Get-Item "Cert:\LocalMachine\My\$($cert384.Thumbprint)")
 
+          Stop-Website "TestSite384"
+          Start-Website "TestSite384"
+
       - name: Disable loopback check
         shell: powershell
         run: |
